@@ -69,14 +69,12 @@
                 </h2>
                 <form id="budgetForm" class="space-y-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">팀원 선택</label>
+                        <div class="flex justify-between items-center">
+                            <label class="block text-sm font-medium text-gray-700">팀원 선택</label>
+                            <button type="button" onclick="openMemberModal()" class="text-xs text-blue-600 hover:underline font-semibold">⚙️ 팀원 관리</button>
+                        </div>
                         <select id="member" class="mt-1 block w-full rounded-md border-gray-300 border p-2 focus:ring-blue-500 focus:border-blue-500" required>
-                            <option value="">팀원을 선택하세요</option>
-                            <option value="부장님">부장님</option>
-                            <option value="팀원1">팀원1</option>
-                            <option value="팀원2">팀원2</option>
-                            <option value="팀원3">팀원3</option>
-                            <option value="팀원4">팀원4</option>
+                            <!-- JavaScript에서 동적으로 옵션 세팅 -->
                         </select>
                     </div>
                     <div>
@@ -193,6 +191,29 @@
         </div>
     </div>
 
+    <!-- Team Member Management Modal -->
+    <div id="memberModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 class="text-lg font-bold mb-2">👥 팀원 목록 관리</h3>
+            <p class="text-sm text-gray-500 mb-4">팀원 이름을 추가, 수정, 삭제할 수 있습니다.</p>
+            
+            <!-- 팀원 추가 입력란 -->
+            <div class="flex space-x-2 mb-4">
+                <input type="text" id="newMemberInput" placeholder="새 팀원 이름 입력" class="flex-1 border rounded-md p-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                <button onclick="addNewMember()" class="px-3 py-2 bg-blue-600 text-white rounded-md font-bold text-sm hover:bg-blue-700">추가</button>
+            </div>
+
+            <!-- 팀원 리스트 -->
+            <div class="max-h-48 overflow-y-auto border rounded-md divide-y divide-gray-100 mb-4" id="memberManageList">
+                <!-- JS Dynamic content -->
+            </div>
+
+            <div class="flex justify-end">
+                <button onclick="closeMemberModal()" class="px-4 py-2 bg-gray-600 text-white rounded-md font-bold text-sm hover:bg-gray-700">닫기</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Apps Script Web App URL
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx4bK7G_yecfz9JWUepABKwm1y47o0jnuv2YcjacZjYXqyCw8OwfbpQaEnJoUNIbGxc/exec'; 
@@ -201,6 +222,102 @@
         let budgetData = [];
         let categoryChart = null;
         let memberChart = null;
+
+        // Default & Custom Team Members
+        const defaultMembers = ['부장님', '팀원1', '팀원2', '팀원3', '팀원4'];
+        let customMembers = JSON.parse(localStorage.getItem('customMembers')) || defaultMembers;
+
+        // Get all unique team members
+        function getAllMembers() {
+            const dataMembers = budgetData.map(d => d.member);
+            const combined = [...customMembers, ...dataMembers];
+            return Array.from(new Set(combined)).filter(Boolean);
+        }
+
+        // Render Member Dropdown Options
+        function renderMemberOptions() {
+            const select = document.getElementById('member');
+            const members = getAllMembers();
+            const currentValue = select.value;
+            select.innerHTML = `<option value="">팀원을 선택하세요</option>` + 
+                members.map(m => `<option value="${m}">${m}</option>`).join('');
+            if (members.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        // Member Modal Controls
+        function openMemberModal() {
+            renderMemberManageList();
+            document.getElementById('memberModal').classList.remove('hidden');
+        }
+
+        function closeMemberModal() {
+            document.getElementById('memberModal').classList.add('hidden');
+        }
+
+        function renderMemberManageList() {
+            const listEl = document.getElementById('memberManageList');
+            if (customMembers.length === 0) {
+                listEl.innerHTML = `<div class="p-3 text-sm text-gray-400 text-center">등록된 팀원이 없습니다.</div>`;
+                return;
+            }
+            listEl.innerHTML = customMembers.map((m, idx) => `
+                <div class="flex justify-between items-center p-2.5 hover:bg-gray-50">
+                    <span class="text-sm font-semibold text-gray-700">${m}</span>
+                    <div class="space-x-1">
+                        <button onclick="editMember(${idx})" class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">✏️ 수정</button>
+                        <button onclick="deleteMember(${idx})" class="text-xs px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded">🗑️ 삭제</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addNewMember() {
+            const input = document.getElementById('newMemberInput');
+            const name = input.value.trim();
+            if (!name) {
+                showAlert('입력 오류', '팀원 이름을 입력하세요.');
+                return;
+            }
+            if (customMembers.includes(name)) {
+                showAlert('중복 오류', '이미 존재하는 팀원입니다.');
+                return;
+            }
+            customMembers.push(name);
+            localStorage.setItem('customMembers', JSON.stringify(customMembers));
+            input.value = '';
+            renderMemberManageList();
+            renderMemberOptions();
+        }
+
+        function editMember(index) {
+            const oldName = customMembers[index];
+            const newName = prompt('새로운 팀원 이름을 입력하세요:', oldName);
+            if (!newName || !newName.trim()) return;
+            const trimmed = newName.trim();
+            if (trimmed === oldName) return;
+            
+            if (customMembers.includes(trimmed)) {
+                showAlert('중복 오류', '이미 존재하는 팀원 이름입니다.');
+                return;
+            }
+
+            customMembers[index] = trimmed;
+            localStorage.setItem('customMembers', JSON.stringify(customMembers));
+            renderMemberManageList();
+            renderMemberOptions();
+        }
+
+        function deleteMember(index) {
+            const targetName = customMembers[index];
+            if (!confirm(`'${targetName}' 팀원을 목록에서 삭제하시겠습니까?`)) return;
+            
+            customMembers.splice(index, 1);
+            localStorage.setItem('customMembers', JSON.stringify(customMembers));
+            renderMemberManageList();
+            renderMemberOptions();
+        }
 
         // Default & Custom Categories
         const defaultCategories = ['수선유지비', '비품', '개량공사'];
@@ -296,6 +413,7 @@
                         category: row.category,
                         amount: parseInt(row.amount)
                     }));
+                    renderMemberOptions();
                     renderCategoryOptions();
                     renderHistory();
                     if(!document.getElementById('section-dashboard').classList.contains('hidden')) {
@@ -596,6 +714,7 @@
             const monthStr = now.toISOString().substring(0, 7);
             document.getElementById('month').value = monthStr;
             
+            renderMemberOptions();
             renderCategoryOptions();
             fetchData();
         }
