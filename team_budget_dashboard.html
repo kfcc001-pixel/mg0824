@@ -274,6 +274,9 @@
 
     <!-- JavaScript Logic -->
     <script>
+        // Google Apps Script Web App Deployment URL
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbx4bK7G_yecfz9JWUepABKwm1y47o0jnuv2YcjacZjYXqyCw8OwfbpQaEnJoUNIbGxc/exec";
+
         // Default initial data
         let members = ["김부장", "이수석", "박선임", "최책임", "정사원"];
         let categories = ["식비/회식", "사무용품", "도서/교육", "교통/출장", "복리후생"];
@@ -301,56 +304,159 @@
             renderCategoryBadges();
             renderMemberBadges();
             updateDashboard();
+
+            // Load live data from Google Sheets via GAS
+            loadDataFromGAS();
         };
 
-        function showToast(msg) {
-            document.getElementById('toastMessage').innerText = msg;
-            openModal('toastModal');
-        }
+        // Fetch all data from Google Apps Script
+        async function loadDataFromGAS() {
+            try {
+                const res = await fetch(`${GAS_URL}?action=getData`);
+                const data = await res.json();
+                
+                if (data.expenses) expenses = data.expenses;
+                if (data.members && data.members.length > 0) members = data.members;
+                if (data.categories && data.categories.length > 0) categories = data.categories;
 
-        function openModal(id) {
-            document.getElementById(id).classList.remove('hidden');
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.add('hidden');
-        }
-
-        function switchTab(tab) {
-            const inputTab = document.getElementById('tabInput');
-            const dashboardTab = document.getElementById('tabDashboard');
-            const inputBtn = document.getElementById('tabInputBtn');
-            const dashboardBtn = document.getElementById('tabDashboardBtn');
-
-            if (tab === 'input') {
-                inputTab.classList.remove('hidden');
-                dashboardTab.classList.add('hidden');
-                inputBtn.classList.add('active');
-                dashboardBtn.classList.remove('active');
-            } else {
-                inputTab.classList.add('hidden');
-                dashboardTab.classList.remove('hidden');
-                dashboardBtn.classList.add('active');
-                inputBtn.classList.remove('active');
+                renderSelectOptions();
+                renderExpenseTable();
+                renderCategoryBadges();
+                renderMemberBadges();
                 updateDashboard();
+            } catch (err) {
+                console.error("구글 시트 데이터 로딩 실패:", err);
             }
         }
 
-        function renderSelectOptions() {
-            const memberSelect = document.getElementById('inputMember');
-            const categorySelect = document.getElementById('inputCategory');
+        async function addExpense(e) {
+            e.preventDefault();
+            const date = document.getElementById('inputDate').value;
+            const member = document.getElementById('inputMember').value;
+            const category = document.getElementById('inputCategory').value;
+            const amount = parseInt(document.getElementById('inputAmount').value) || 0;
+            const note = document.getElementById('inputNote').value || '-';
 
-            memberSelect.innerHTML = members.map(m => `<option value="${m}">${m}</option>`).join('');
-            categorySelect.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            if (amount <= 0) {
+                showToast('올바른 금액을 입력해 주세요.');
+                return;
+            }
+
+            const newExpense = {
+                action: 'addExpense',
+                id: Date.now(),
+                date,
+                member,
+                category,
+                amount,
+                note
+            };
+
+            expenses.unshift(newExpense);
+            document.getElementById('inputAmount').value = '';
+            document.getElementById('inputNote').value = '';
+
+            renderExpenseTable();
+            updateDashboard();
+            showToast('구글 시트에 저장 중...');
+
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(newExpense)
+                });
+                showToast('구글 시트에 성공적으로 저장되었습니다.');
+            } catch (err) {
+                console.error("저장 실패:", err);
+                showToast('구글 시트 저장 중 오류가 발생했습니다.');
+            }
         }
 
-        function renderCategoryBadges() {
-            const container = document.getElementById('categoryListContainer');
-            container.innerHTML = categories.map(c => `
-                <span class="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-lg border border-gray-200">
-                    ${c}
-                </span>
-            `).join('');
+        async function deleteExpense(id) {
+            expenses = expenses.filter(item => item.id !== id);
+            renderExpenseTable();
+            updateDashboard();
+
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'deleteExpense', id: id })
+                });
+                showToast('내역이 삭제되었습니다.');
+            } catch (err) {
+                console.error("삭제 실패:", err);
+            }
+        }
+
+        async function addCategory() {
+            const input = document.getElementById('newCategoryInput');
+            const val = input.value.trim();
+            if (!val) return;
+            if (categories.includes(val)) {
+                showToast('이미 존재하는 항목입니다.');
+                return;
+            }
+            categories.push(val);
+            input.value = '';
+            renderSelectOptions();
+            renderCategoryBadges();
+            closeModal('categoryModal');
+            showToast(`'${val}' 항목이 추가되었습니다.`);
+
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'addCategory', categoryName: val })
+                });
+            } catch (err) {
+                console.error("항목 추가 실패:", err);
+            }
+        }
+
+        async function addMember() {
+            const input = document.getElementById('newMemberInput');
+            const val = input.value.trim();
+            if (!val) return;
+            if (members.includes(val)) {
+                showToast('이미 존재하는 팀원입니다.');
+                return;
+            }
+            members.push(val);
+            input.value = '';
+            renderSelectOptions();
+            renderMemberBadges();
+            closeModal('memberModal');
+            showToast(`'${val}' 님이 팀원으로 추가되었습니다.`);
+
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'addMember', memberName: val })
+                });
+            } catch (err) {
+                console.error("팀원 추가 실패:", err);
+            }
+        }
+
+        async function deleteMember(memberName) {
+            if (members.length <= 1) {
+                showToast('최소 한 명의 팀원은 등록되어 있어야 합니다.');
+                return;
+            }
+            members = members.filter(m => m !== memberName);
+            renderSelectOptions();
+            renderMemberBadges();
+            updateDashboard();
+            showToast(`'${memberName}' 님이 삭제되었습니다.`);
+
+            try {
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'deleteMember', memberName: memberName })
+                });
+            } catch (err) {
+                console.error("팀원 삭제 실패:", err);
+            }
         }
 
         function renderMemberBadges() {
